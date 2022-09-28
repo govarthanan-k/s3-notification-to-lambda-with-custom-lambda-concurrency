@@ -4,10 +4,12 @@ import * as cdk from "aws-cdk-lib";
 import { CustomLambdaWithReservedConcurrencyStack } from "../lib/stacks/custom-lambda-with-reserved-concurrency-stack";
 
 const app = new cdk.App();
+const version = "v5";
 new CustomLambdaWithReservedConcurrencyStack(
   app,
-  "CustomLambdaWithReservedConcurrencyStack",
+  `CustomLambdaWithReservedConcurrencyStack${version}`,
   {
+    version,
     /* If you don't specify 'env', this stack will be environment-agnostic.
      * Account/Region-dependent features and context lookups will not work,
      * but a single synthesized template can be deployed anywhere. */

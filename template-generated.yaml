@@ -1,0 +1,270 @@
+Resources:
+  govatestbucketv5CCF242A0:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: gova-test-bucket-v5
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: CustomLambdaWithReservedConcurrencyStackv5/gova-test-bucket-v5/Resource
+  LambdaIAMRolev5C241759D:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      Path: /
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - s3:GetBucketNotification
+                  - s3:PutBucketNotification
+                Effect: Allow
+                Resource:
+                  Fn::GetAtt:
+                    - govatestbucketv5CCF242A0
+                    - Arn
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+            Version: "2012-10-17"
+          PolicyName: root
+      RoleName: LambdaIAMRolev5
+    Metadata:
+      aws:cdk:path: CustomLambdaWithReservedConcurrencyStackv5/LambdaIAMRolev5/Resource
+  S3NotificationProcessorLambdav53199D09A:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket:
+          Fn::Sub: cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}
+        S3Key: 54e1bcec3e125eae22c23b407892e9ddd940970fc2b8eeb257a1724118e44902.zip
+      Role:
+        Fn::GetAtt:
+          - LambdaIAMRolev5C241759D
+          - Arn
+      FunctionName: S3NotificationProcessorLambdav5
+      Handler: index.handler
+      Runtime: nodejs14.x
+      Timeout: 30
+    DependsOn:
+      - LambdaIAMRolev5C241759D
+    Metadata:
+      aws:cdk:path: CustomLambdaWithReservedConcurrencyStackv5/S3NotificationProcessorLambdav5/Resource
+      aws:asset:path: asset.54e1bcec3e125eae22c23b407892e9ddd940970fc2b8eeb257a1724118e44902
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  S3NotificationProcessorLambdav5LambdaInvokePermissionv5BAAF8CA9:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - S3NotificationProcessorLambdav53199D09A
+          - Arn
+      Principal: s3.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - govatestbucketv5CCF242A0
+          - Arn
+    Metadata:
+      aws:cdk:path: CustomLambdaWithReservedConcurrencyStackv5/S3NotificationProcessorLambdav5/LambdaInvokePermissionv5
+  CustomLambdaFunctionv5B2854E33:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          from __future__ import print_function
+          import json
+          import boto3
+          import cfnresponse
+
+          SUCCESS = "SUCCESS"
+          FAILED = "FAILED"
+
+          print('Loading function')
+          s3 = boto3.resource('s3')
+
+
+          def lambda_handler(event, context):
+              print("Received event: " + json.dumps(event, indent=2))
+              responseData = {}
+              try:
+                  if event['RequestType'] == 'Delete':
+                      print("Request Type:", event['RequestType'])
+                      Bucket = event['ResourceProperties']['Bucket']
+                      delete_notification(Bucket)
+                      print("Sending response to custom resource after Delete")
+                  elif event['RequestType'] == 'Create' or event['RequestType'] == 'Update':
+                      print("Request Type:", event['RequestType'])
+                      LambdaArn = event['ResourceProperties']['LambdaArn']
+                      Bucket = event['ResourceProperties']['Bucket']
+                      add_notification(LambdaArn, Bucket)
+                      responseData = {'Bucket': Bucket}
+                      print("Sending response to custom resource")
+                  responseStatus = 'SUCCESS'
+              except Exception as e:
+                  print('Failed to process:', e)
+                  responseStatus = 'FAILED'
+                  responseData = {'Failure': 'Something bad happened.'}
+              cfnresponse.send(event, context, responseStatus, responseData)
+
+
+          def add_notification(LambdaArn, Bucket):
+              bucket_notification = s3.BucketNotification(Bucket)
+              response = bucket_notification.put(
+                  NotificationConfiguration={
+                      'LambdaFunctionConfigurations': [
+                          {
+                              'LambdaFunctionArn': LambdaArn,
+                              'Events': [
+                                  's3:ObjectCreated:*'
+                              ]
+                          }
+                      ]
+                  }
+              )
+              print("Put request completed....")
+
+
+          def delete_notification(Bucket):
+              bucket_notification = s3.BucketNotification(Bucket)
+              response = bucket_notification.put(
+                  NotificationConfiguration={}
+              )
+              print("Delete request completed....")
+      Role:
+        Fn::GetAtt:
+          - LambdaIAMRolev5C241759D
+          - Arn
+      FunctionName: CustomLambdaFunctionv5
+      Handler: index.lambda_handler
+      ReservedConcurrentExecutions: 1
+      Runtime: python3.9
+      Timeout: 300
+    DependsOn:
+      - LambdaIAMRolev5C241759D
+    Metadata:
+      aws:cdk:path: CustomLambdaWithReservedConcurrencyStackv5/CustomLambdaFunctionv5/Resource
+  CustomLambdaTriggerv5:
+    Type: Custom::LambdaTrigger
+    Properties:
+      ServiceToken:
+        Fn::GetAtt:
+          - CustomLambdaFunctionv5B2854E33
+          - Arn
+      LambdaArn:
+        Fn::GetAtt:
+          - S3NotificationProcessorLambdav53199D09A
+          - Arn
+      Bucket:
+        Ref: govatestbucketv5CCF242A0
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: CustomLambdaWithReservedConcurrencyStackv5/CustomLambdaTriggerv5/Default
+  CDKMetadata:
+    Type: AWS::CDK::Metadata
+    Properties:
+      Analytics: v2:deflate64:H4sIAAAAAAAA/02OQQ6CMBBFz8K+jEqNeyFxbfAApLSVDNA2YVpdNL27FFywem/mJzO/giuHcyG+VEo1lTP2EF9eyImtqy4Sh1gHOWnPmrf9245akE4MhYHYulnnPDOxWZheCYiPYKVHZ3Ny9KdeDBKtU2LEO0GkPcE9I7ENa4EB7cCaQN6ZVpMLi9w/HLxxVqHfzlinNIx0+lxucOFQFSMhlkuwHo2GducPg0Rc5+sAAAA=
+    Metadata:
+      aws:cdk:path: CustomLambdaWithReservedConcurrencyStackv5/CDKMetadata/Default
+    Condition: CDKMetadataAvailable
+Conditions:
+  CDKMetadataAvailable:
+    Fn::Or:
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - af-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-northeast-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ap-southeast-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - ca-central-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - cn-north-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - cn-northwest-1
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-central-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-north-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-2
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - eu-west-3
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - me-south-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - sa-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-east-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-east-2
+      - Fn::Or:
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-west-1
+          - Fn::Equals:
+              - Ref: AWS::Region
+              - us-west-2
+Parameters:
+  BootstrapVersion:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /cdk-bootstrap/hnb659fds/version
+    Description: Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]
+Rules:
+  CheckBootstrapVersion:
+    Assertions:
+      - Assert:
+          Fn::Not:
+            - Fn::Contains:
+                - - "1"
+                  - "2"
+                  - "3"
+                  - "4"
+                  - "5"
+                - Ref: BootstrapVersion
+        AssertDescription: CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.
